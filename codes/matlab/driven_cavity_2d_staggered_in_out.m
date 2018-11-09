@@ -49,7 +49,7 @@ clear variables;
 % ----------------------------------------------------------------------- %
 
 % Only even numbers of cells are acceptable
-nx=24;      % number of (physical) cells along x
+nx=58;      % number of (physical) cells along x
 ny=nx;      % number of (physical) cells along y
 L=1;        % length [m]
 nu=0.01;    % kinematic viscosity [m2/s] (if L=1 and un=1, then Re=1/nu)
@@ -60,11 +60,21 @@ un=1;       % north wall velocity [m/s]
 us=0;       % south wall velocity [m/s]
 ve=0;       % east wall velocity [m/s]
 vw=0;       % west wall velocity [m/s]
+uin=1;      % [INOUT] inlet velocity [m/s]
 
 % Parameters for SOR
 max_iterations=10000;   % maximum number of iterations
-beta=1.3;               % SOR coefficient
+beta=1.2;               % SOR coefficient
 max_error=1e-5;         % error for convergence
+
+% [INOUT] Inlet section (west side)
+nin_start = 1/2*(ny+2);         % first cell index 
+nin_end = 3/4*(ny+2);           % last cell index
+
+% [INOUT] Outlet section (east side)
+nout_start = 1/4*(ny+2);            % first cell index 
+nout_end = 1/2*(ny+2);              % last cell index
+
 
 % ----------------------------------------------------------------------- %
 % Data processing
@@ -74,13 +84,19 @@ max_error=1e-5;         % error for convergence
 h=L/nx;                             % grid step (uniform grid) [m]
 
 % Time step
-sigma = 0.5;                        % safety factor for time step (stability)
-dt_diff=h^2/4/nu;                   % time step (diffusion stability) [s]
-dt_conv=4*nu/un^2;                  % time step (convection stability) [s]
-dt=sigma*min(dt_diff, dt_conv);     % time step (stability) [s]
-nsteps=tau/dt;                      % number of steps
-Re = un*L/nu;                       % Reynolds' number
+umax=max(un,max(us,max(ve,max(vw,uin))));   % [INOUT] maximum velocity [m/s]
+sigma = 0.5;                                % safety factor for time step (stability)
+dt_diff=h^2/4/nu;                           % time step (diffusion stability) [s]
+dt_conv=4*nu/umax^2;                        % [INOUT] time step (convection stability) [s]
+dt=sigma*min(dt_diff, dt_conv);             % time step (stability) [s]
+nsteps=tau/dt;                              % number of steps
+Re = umax*L/nu;                             % [INOUT] Reynolds' number
 
+% [INOUT] Inlet/Outlet section areas
+Ain = h*(nin_end-nin_start+1);      % inlet section area [m]
+Aout = h*(nout_end-nout_start+1);   % outlet section area [m]
+
+% Print on the screen
 fprintf('Time step: %f\n', dt);
 fprintf(' - Diffusion:  %f\n', dt_diff);
 fprintf(' - Convection: %f\n', dt_conv);
@@ -128,6 +144,23 @@ for is=1:nsteps
     u(1:nx+1,ny+2)=2*un-u(1:nx+1,ny+1);         % north wall
     v(1,1:ny+1)=2*vw-v(2,1:ny+1);               % west wall
     v(nx+2,1:ny+1)=2*ve-v(nx+1,1:ny+1);         % east wall
+    
+    % [INOUT] Over-writing inlet conditions    
+    u(1,nin_start:nin_end) = uin;               % fixed velocity
+    Qin = mean(u(1,nin_start:nin_end))*Ain;     % inlet flow rate [m2/s]
+    
+    % [INOUT] Over-writing outlet conditions
+    u(nx+1,nout_start:nout_end) = u(nx,nout_start:nout_end);    % 0-gradient
+    Qout = mean(u(nx+1,nout_start:nout_end))*Aout;              % outlet flow rate [m2/s]
+    
+    % [INOUT] Correction on outlet to ensure conservation of mass
+    if (abs(Qout)>1.e-12)
+        u(nx+1,nout_start:nout_end) = u(nx+1,nout_start:nout_end)*abs(Qin/Qout);
+    end
+    
+    % [INOUT] Create a temporary copy of velocity fields
+    ut = u;
+    vt = v;
     
     % Temporary u-velocity
     for i=2:nx
@@ -232,8 +265,8 @@ axis('square'); title('v'); xlabel('x'); ylabel('y'); shading interp;
 
 % Streamlines
 subplot(233);
-sx = 0:2*h:1;
-sy = 0:2*h:1;
+sx = [0:2*h:1 0.1*(1:-2*h:0)];
+sy = [0:2*h:1 0:2*h:1];
 streamline(X,Y,uu',vv',sx,sy)
 axis([0 1 0 1], 'square');
 title('streamlines'); xlabel('x'); ylabel('y');
