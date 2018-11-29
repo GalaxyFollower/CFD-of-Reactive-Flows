@@ -69,7 +69,9 @@ max_error=1e-5;         % error for convergence
 
 % Data for species A
 CAin  = 1;              % porous wall concentration [kmol/m3]   
+CBin  = 1;              % porous wall concentration [kmol/m3]
 Gamma = 0.01;           % mass diffusion coefficient [m2/s]
+kappa = 10;             % kinetic constant [m3/kmol/s]
 
 % ----------------------------------------------------------------------- %
 % Data processing
@@ -79,14 +81,17 @@ Gamma = 0.01;           % mass diffusion coefficient [m2/s]
 h=L/nx;                                 % grid step (uniform grid) [m]
 
 % Time step
-sigma = 0.5;                            % safety factor for time step (stability)
+sigma = 0.25;                           % safety factor for time step (stability)
 dt_diff=h^2/4/nu;                       % time step (diffusion stability) [s]
 dt_conv=4*nu/un^2;                      % time step (convection stability) [s]
-dt=min(dt_diff, dt_conv);               % time step (stability) [s]
+dt=min(dt_diff, dt_conv);               
 
 dt_diff_A=h^2/4/Gamma;                  % time step (diffusion stability) [s]
 dt_conv_A=4*Gamma/un^2;                 % time step (convection stability) [s]
-dt=min(dt, min(dt_diff_A, dt_conv_A));  % time step [s]
+dt=min(dt, min(dt_diff_A, dt_conv_A));  
+
+dt_reac=1/(kappa*max(CAin, CBin));      % time step (reaction stability) [s]
+dt=min(dt, dt_reac);
 
 dt=dt*sigma;                        % time step [s]
 nsteps=tau/dt;                      % number of steps
@@ -111,6 +116,8 @@ u=zeros(nx+1,ny+2);
 v=zeros(nx+2,ny+1);
 p=zeros(nx+2,ny+2);
 CA=zeros(nx+2,ny+2);
+CB=zeros(nx+2,ny+2);
+CC=zeros(nx+2,ny+2);
 
 % Temporary velocity fields
 ut=zeros(nx+1,ny+2);
@@ -124,6 +131,8 @@ uu=zeros(nx+1,ny+1);
 vv=zeros(nx+1,ny+1);
 pp=zeros(nx+1,ny+1);
 ca=zeros(nx+1,ny+1);
+cb=zeros(nx+1,ny+1);
+cc=zeros(nx+1,ny+1);
 
 % Coefficient for pressure equation
 gamma=zeros(nx+2,ny+2)+1/4;
@@ -221,24 +230,52 @@ for is=1:nsteps
     CA(2:nx+1,ny+2) = CA(2:nx+1,ny+1);      % North wall
     CA(nx+2,2:ny+1) = CA(nx+1,2:ny+1);      % East wall
     CA(1,2:ny+1)    = CA(2,2:ny+1);         % West wall
+    CB(2:nx+1,1)    = CB(2:nx+1,2);         % South wall
+    CB(2:nx+1,ny+2) = CB(2:nx+1,ny+1);      % North wall
+    CB(nx+2,2:ny+1) = CB(nx+1,2:ny+1);      % East wall
+    CB(1,2:ny+1)    = CB(2,2:ny+1);         % West wall
+    CC(2:nx+1,1)    = CC(2:nx+1,2);         % South wall
+    CC(2:nx+1,ny+2) = CC(2:nx+1,ny+1);      % North wall
+    CC(nx+2,2:ny+1) = CC(nx+1,2:ny+1);      % East wall
+    CC(1,2:ny+1)    = CC(2,2:ny+1);         % West wall
     
     % Porous medium (over-writing)
     CA(1,ny/2:3/4*ny) = 2*CAin-CA(2,ny/2:3/4*ny); 
+    CB(nx+2,ny/4:ny/2)= 2*CBin-CB(nx+1,ny/4:ny/2);
     
-    % Concentration of species A
-    CAo = CA;
+    % Concentration of species A and B
+    CAo = CA; 
+    CBo = CB;
+    CCo = CC;
     for i=2:nx+1
         for j=2:ny+1
-            
+
             ue = u(i,j);    uw = u(i-1,j);
             vn = v(i,j);    vs = v(i,j-1);
+            
+            r = kappa*CAo(i,j)*CBo(i,j);
             
             CA(i,j)= CAo(i,j) + dt *( ...   
                     (-ue/2/h+Gamma/h^2)*CAo(i+1,j) + ...
                     ( uw/2/h+Gamma/h^2)*CAo(i-1,j) + ...
                     (-vn/2/h+Gamma/h^2)*CAo(i,j+1) + ...
                     ( vs/2/h+Gamma/h^2)*CAo(i,j-1) + ...
-                    (-4*Gamma/h^2)*CAo(i,j) );
+                    (-4*Gamma/h^2)*CAo(i,j) -r );
+                
+            CB(i,j)= CBo(i,j) + dt *( ...   
+                    (-ue/2/h+Gamma/h^2)*CBo(i+1,j) + ...
+                    ( uw/2/h+Gamma/h^2)*CBo(i-1,j) + ...
+                    (-vn/2/h+Gamma/h^2)*CBo(i,j+1) + ...
+                    ( vs/2/h+Gamma/h^2)*CBo(i,j-1) + ...
+                    (-4*Gamma/h^2)*CBo(i,j) -r );
+            
+            CC(i,j)= CCo(i,j) + dt *( ...   
+                    (-ue/2/h+Gamma/h^2)*CCo(i+1,j) + ...
+                    ( uw/2/h+Gamma/h^2)*CCo(i-1,j) + ...
+                    (-vn/2/h+Gamma/h^2)*CCo(i,j+1) + ...
+                    ( vs/2/h+Gamma/h^2)*CCo(i,j-1) + ...
+                    (-4*Gamma/h^2)*CCo(i,j) +r );
+                
         end
     end
     
@@ -249,21 +286,28 @@ for is=1:nsteps
                             p(2:nx+2,1:ny+1)+p(2:nx+2,2:ny+2));
     ca(1:nx+1,1:ny+1)=0.25*(CA(1:nx+1,1:ny+1)+CA(1:nx+1,2:ny+2)+...
                             CA(2:nx+2,1:ny+1)+CA(2:nx+2,2:ny+2));
+    cb(1:nx+1,1:ny+1)=0.25*(CB(1:nx+1,1:ny+1)+CB(1:nx+1,2:ny+2)+...
+                            CB(2:nx+2,1:ny+1)+CB(2:nx+2,2:ny+2));
+    cc(1:nx+1,1:ny+1)=0.25*(CC(1:nx+1,1:ny+1)+CC(1:nx+1,2:ny+2)+...
+                            CC(2:nx+2,1:ny+1)+CC(2:nx+2,2:ny+2));
                         
     % Surface 
     if (mod(is,25)==1)
         
-        subplot(121);
-        surface(X,Y, uu', 'EdgeColor', 'none', 'LineStyle', 'none');
+        subplot(131);
+        surface(X,Y, ca', 'EdgeColor', 'none', 'LineStyle', 'none');
         axis('square'); colorbar; shading interp;
-        subplot(122);
-        surface(X,Y,ca', 'EdgeColor', 'none', 'LineStyle', 'none');
+        subplot(132);
+        surface(X,Y,cb', 'EdgeColor', 'none', 'LineStyle', 'none');
         axis('square'); colorbar; shading interp;
-
+        subplot(133);
+        surface(X,Y,cc', 'EdgeColor', 'none', 'LineStyle', 'none');
+        axis('square'); colorbar; shading interp;
+        
         pause(0.01);
-    
+        
     end
-    
+
     % Advance time
     t=t+dt;
 
@@ -280,6 +324,11 @@ pp(1:nx+1,1:ny+1)=0.25*(p(1:nx+1,1:ny+1)+p(1:nx+1,2:ny+2)+...
                         p(2:nx+2,1:ny+1)+p(2:nx+2,2:ny+2));
 ca(1:nx+1,1:ny+1)=0.25*(CA(1:nx+1,1:ny+1)+CA(1:nx+1,2:ny+2)+...
                         CA(2:nx+2,1:ny+1)+CA(2:nx+2,2:ny+2));
+cb(1:nx+1,1:ny+1)=0.25*(CB(1:nx+1,1:ny+1)+CB(1:nx+1,2:ny+2)+...
+                        CB(2:nx+2,1:ny+1)+CB(2:nx+2,2:ny+2));                    
+cc(1:nx+1,1:ny+1)=0.25*(CC(1:nx+1,1:ny+1)+CC(1:nx+1,2:ny+2)+...
+                        CC(2:nx+2,1:ny+1)+CC(2:nx+2,2:ny+2));
 
 % Additional post-processing
 % ...
+
