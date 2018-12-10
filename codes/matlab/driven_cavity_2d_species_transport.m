@@ -34,7 +34,7 @@
 %                                                                         %
 %-------------------------------------------------------------------------%
 %                                                                         %
-%  Code: 2D driven-cavity problem in vorticity/streamline formulation     %
+%  Code: 2D driven-cavity problem in finite volume formulation            %
 %        The advection-diffusion equation for a passive species A is      %
 %        included.                                                        %
 %        The code is adapted and extended from Tryggvason, Computational  %
